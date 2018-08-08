@@ -35,6 +35,11 @@ int MapData02[MAP_02_HEIGHT][MAP_02_WIDTH];
 static float MoveImage;
 static float MoveImage2P;
 
+int trampolinecount;
+
+static int Trampoline_x[10];
+static int Trampoline_y[10];
+
 int y_prev = 0, y_temp = 0;
 int y_prev2P = 0, y_temp2P = 0;
 
@@ -45,7 +50,7 @@ struct CUSTOMVERTEX
 	FLOAT	tu, tv;
 };
 
-struct PLAYER_STATE
+struct OBJECT_STATE
 {
 	float x, y, scale_x, scale_y;
 };
@@ -58,6 +63,7 @@ enum TEXTURE
 	PLAYER_2P_RIGHT_TEX,
 	GROUNDBLOCK_TEX,
 	SCAFFOLD_TEX,	// ë´èÍÇ∆Ç¢Ç§à”ñ°
+	TRAMPOLINE_TEX,
 	TEXMAX
 };
 
@@ -65,7 +71,8 @@ enum BLOCKTYPE
 {
 	NONE,
 	GROUNDBLOCK,
-	SCAFFOLD
+	SCAFFOLD,
+	TRAMPOLINEBLOCK
 };
 
 enum PLAYER_MODE1P {
@@ -78,8 +85,9 @@ enum PLAYER_MODE2P {
 	LEFT_DIRECTION2P
 };
 
-PLAYER_STATE g_Player = { 30.f,680.f,90.f,120.f };
-PLAYER_STATE g_Player2P = { 30.f,680.f,90.f,120.f };
+OBJECT_STATE g_Player = { 30.f,680.f,90.f,120.f };
+OBJECT_STATE g_Player2P = { 30.f,680.f,90.f,120.f };
+OBJECT_STATE g_Trampoline = { 0.f,0.f,32.f,32.f };
 
 int PlayerMode1P = RIGHT_DIRECTION1P;
 int PlayerMode2P = RIGHT_DIRECTION2P;
@@ -287,9 +295,24 @@ void PlayerOperation(void) {
 	}
 }
 
+void PlayerDecision(void) {
+	
+	for (int i = 0; i < trampolinecount; i++) {
+
+		if ((Trampoline_x[i] < g_Player.x + g_Player.scale_x) &&
+				(Trampoline_x[i] + g_Trampoline.scale_x > g_Player.x) &&
+				(Trampoline_y[i] < g_Player.y + g_Player.scale_y) &&
+				(Trampoline_y[i] + g_Trampoline.scale_y > g_Player.y)) {
+				g_Player.y -= 300;
+		}
+	}
+	trampolinecount = 0;
+}
+
 void GameMainControl(void) {
 	
 	PlayerOperation();
+	PlayerDecision();
 }
 
 void GameMainRender(void) {
@@ -319,6 +342,14 @@ void GameMainRender(void) {
 		{ 0.f, 0.f, 1.f, 1.f, 0xFFFFFFFF, 1.f, 0.f }, // x,yÇÃêîílÇÕ0Ç≈ó«Ç¢
 		{ 0.f, 0.f, 1.f, 1.f, 0xFFFFFFFF, 1.f, 1.f },
 		{ 0.f, 0.f, 1.f, 1.f, 0xFFFFFFFF, 0.f, 1.f }
+	};
+
+	CUSTOMVERTEX  TRAMPOLINE[4]
+	{
+		{ g_Trampoline.x, g_Trampoline.y, 1.f, 1.f, 0xFFFFFFFF, 0.f, 0.f },
+		{ g_Trampoline.x + g_Trampoline.scale_x, g_Trampoline.y, 1.f, 1.f, 0xFFFFFFFF, 1.f, 0.f },
+		{ g_Trampoline.x + g_Trampoline.scale_x, g_Trampoline.y + g_Trampoline.scale_y, 1.f, 1.f, 0xFFFFFFFF, 1.f, 1.f },
+		{ g_Trampoline.x, g_Trampoline.y + g_Trampoline.scale_y , 1.f, 1.f, 0xFFFFFFFF, 0.f, 1.f }
 	};
 
 	//âÊñ ÇÃè¡ãé
@@ -382,6 +413,18 @@ void GameMainRender(void) {
 			case SCAFFOLD:
 				TextureID = SCAFFOLD_TEX;
 				break;
+			case TRAMPOLINEBLOCK:
+				TextureID = TRAMPOLINE_TEX;
+				CELL[0].x = Trampoline_x[trampolinecount] = left - 32;
+				CELL[0].y = Trampoline_y[trampolinecount] = top;
+				CELL[1].x = left + CELL_SIZE + 32;
+				CELL[1].y = top;
+				CELL[2].x = left + CELL_SIZE + 32;
+				CELL[2].y = top + CELL_SIZE;
+				CELL[3].x = left - 32;
+				CELL[3].y = top + CELL_SIZE;
+				trampolinecount++;
+				break;
 			}
 			g_pD3Device->SetTexture(0, g_pTexture[TextureID]);
 			g_pD3Device->DrawPrimitiveUP(D3DPT_TRIANGLEFAN, 2, CELL, sizeof(CUSTOMVERTEX));
@@ -425,6 +468,11 @@ void CreateTexture(void) {
 		g_pD3Device,
 		"groundblock.jpg",
 		&g_pTexture[GROUNDBLOCK_TEX]);
+
+	D3DXCreateTextureFromFile(
+		g_pD3Device,
+		"trampoline.png",
+		&g_pTexture[TRAMPOLINE_TEX]);
 }
 
 HRESULT InitDinput(HWND hWnd)
@@ -589,37 +637,3 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR lpCmdLine,
 
 	return 0;
 }
-
-//void ReadMapData(void)
-//{
-//	char InputFileName[] = "BigField.csv";
-//	FILE *fp1;
-//	char data[4];
-//	int c, i = 0, x = 0, y = 0;
-//
-//	if ((fopen_s(&fp1, InputFileName, "r")) != 0)
-//	{
-//		exit(1);
-//	}
-//
-//	while ((c = getc(fp1)) != EOF)
-//	{
-//		if (isdigit(c))
-//		{
-//			data[i] = (char)c;
-//			i++;
-//		}
-//		else
-//		{
-//			data[i] = '\0';
-//			MapData[y][x] = atoi(data);
-//			x++;
-//			i = 0;
-//			if (x == MAP_01_WIDTH) {
-//				y++;
-//				x = 0;
-//			}
-//		}
-//	}
-//	fclose(fp1);
-//}
