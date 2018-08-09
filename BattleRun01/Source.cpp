@@ -36,12 +36,10 @@ static float MoveImage;
 static float MoveImage2P;
 
 int trampolinecount;
+int manholecount;
 
-static int Trampoline_x[10];
-static int Trampoline_y[10];
-
-int y_prev = 0, y_temp = 0;
-int y_prev2P = 0, y_temp2P = 0;
+float y_prev = 0, y_temp = 0;
+float y_prev2P = 0, y_temp2P = 0;
 
 struct CUSTOMVERTEX
 {
@@ -55,6 +53,14 @@ struct OBJECT_STATE
 	float x, y, scale_x, scale_y;
 };
 
+struct OBJECT_POSITION
+{
+	float x, y;
+}; 
+
+OBJECT_POSITION trampoline[10];
+OBJECT_POSITION manhole[10];
+
 enum TEXTURE
 {
 	PLAYER_LEFT_TEX,
@@ -64,6 +70,7 @@ enum TEXTURE
 	GROUNDBLOCK_TEX,
 	SCAFFOLD_TEX,	// 足場という意味
 	TRAMPOLINE_TEX,
+	MANHOLE_TEX,
 	TEXMAX
 };
 
@@ -72,7 +79,8 @@ enum BLOCKTYPE
 	NONE,
 	GROUNDBLOCK,
 	SCAFFOLD,
-	TRAMPOLINEBLOCK
+	TRAMPOLINEBLOCK,
+	MANHOLE
 };
 
 enum PLAYER_MODE1P {
@@ -88,6 +96,7 @@ enum PLAYER_MODE2P {
 OBJECT_STATE g_Player = { 30.f,680.f,90.f,120.f };
 OBJECT_STATE g_Player2P = { 30.f,680.f,90.f,120.f };
 OBJECT_STATE g_Trampoline = { 0.f,0.f,32.f,32.f };
+OBJECT_STATE g_Manhole = { 0.f,0.f,32.f,96.f };
 
 int PlayerMode1P = RIGHT_DIRECTION1P;
 int PlayerMode2P = RIGHT_DIRECTION2P;
@@ -101,13 +110,13 @@ IDirect3D9*			  g_pDirect3D;				//	Direct3Dのインターフェイス
 LPDIRECTINPUT8		  pDinput = NULL;
 LPDIRECTINPUTDEVICE8  pKeyDevice = NULL;
 
-void ReadMapData(const char* FileName,int* MapData,int MapWidth)
+void ReadMapData(const char* pFileName,int* pMapData,int MapWidth)
 {
 	FILE *fp1;
 	char data[4];
 	int c, i = 0, x = 0, y = 0;
 
-	if ((fopen_s(&fp1, FileName, "r")) != 0)
+	if ((fopen_s(&fp1, pFileName, "r")) != 0)
 	{
 		exit(1);
 	}
@@ -122,7 +131,7 @@ void ReadMapData(const char* FileName,int* MapData,int MapWidth)
 		else
 		{
 			data[i] = '\0';
-			*(MapData + y * MapWidth + x) = atoi(data);
+			*(pMapData + y * MapWidth + x) = atoi(data);
 			x++;
 			i = 0;
 			if (x == MapWidth) {
@@ -295,30 +304,55 @@ void PlayerOperation(void) {
 	}
 }
 
-void PlayerDecision(void) {
-	
-	for (int i = 0; i < trampolinecount; i++) {
+BOOL PlayerDecision(int* pcount, OBJECT_POSITION* pposition, OBJECT_STATE gstate) {
 
-		if ((Trampoline_x[i] < g_Player.x + g_Player.scale_x) &&
-				(Trampoline_x[i] + g_Trampoline.scale_x > g_Player.x) &&
-				(Trampoline_y[i] < g_Player.y + g_Player.scale_y) &&
-				(Trampoline_y[i] + g_Trampoline.scale_y > g_Player.y)) {
-				g_Player.y -= 300;
+	for (int i = 0; i < *pcount; i++) {
+
+		if ((pposition[i].x < g_Player.x + g_Player.scale_x) &&
+			(pposition[i].x + gstate.scale_x > g_Player.x) &&
+			(pposition[i].y < g_Player.y + g_Player.scale_y) &&
+			(pposition[i].y + gstate.scale_y > g_Player.y)) {
+			*pcount = 0;
+			return true;
+		}
+		else {
+			*pcount = 0;	
 		}
 	}
-	trampolinecount = 0;
+	return false;
 }
 
+//void PlayerDecision(void) {
+//
+//	for (int i = 0; i < trampolinecount; i++) {
+//
+//		if ((trampoline[i].x < g_Player.x + g_Player.scale_x) &&
+//			(trampoline[i].x + g_Trampoline.scale_x > g_Player.x) &&
+//			(trampoline[i].y < g_Player.y + g_Player.scale_y) &&
+//			(trampoline[i].y + g_Trampoline.scale_y > g_Player.y)) {
+//			g_Player.y -= 300;
+//		}
+//	}
+//	trampolinecount = 0;
+//}
+
 void GameMainControl(void) {
+
 	
 	PlayerOperation();
-	PlayerDecision();
+	if (PlayerDecision(&trampolinecount, trampoline, g_Trampoline)) {
+		g_Player.y = 300;
+	}
+	
+	if (PlayerDecision(&manholecount, manhole, g_Manhole)) {
+		g_Player.y = 100;
+	}
 }
 
 void GameMainRender(void) {
 
 	int i, j;
-	int TextureID;
+	int TextureID = 0;
 
 	CUSTOMVERTEX  PLAYER[4]
 	{
@@ -394,8 +428,8 @@ void GameMainRender(void) {
 				continue;
 			}
 
-			int left = FIELD_LEFT + CELL_SIZE * i;
-			int top = FIELD_TOP + CELL_SIZE * j;
+			float left = FIELD_LEFT + CELL_SIZE * i;
+			float top = FIELD_TOP + CELL_SIZE * j;
 			CELL[0].x = left;
 			CELL[0].y = top;
 			CELL[1].x = left + CELL_SIZE;
@@ -415,15 +449,27 @@ void GameMainRender(void) {
 				break;
 			case TRAMPOLINEBLOCK:
 				TextureID = TRAMPOLINE_TEX;
-				CELL[0].x = Trampoline_x[trampolinecount] = left - 32;
-				CELL[0].y = Trampoline_y[trampolinecount] = top;
-				CELL[1].x = left + CELL_SIZE + 32;
+				CELL[0].x = trampoline[trampolinecount].x = left - g_Trampoline.scale_x;
+				CELL[0].y = trampoline[trampolinecount].y = top;
+				CELL[1].x = left + CELL_SIZE + g_Trampoline.scale_x;
 				CELL[1].y = top;
-				CELL[2].x = left + CELL_SIZE + 32;
+				CELL[2].x = left + CELL_SIZE + g_Trampoline.scale_x;
 				CELL[2].y = top + CELL_SIZE;
-				CELL[3].x = left - 32;
+				CELL[3].x = left - g_Trampoline.scale_x;
 				CELL[3].y = top + CELL_SIZE;
 				trampolinecount++;
+				break;
+			case MANHOLE:
+				TextureID = MANHOLE_TEX;
+				CELL[0].x = manhole[manholecount].x = left - g_Manhole.scale_x;
+				CELL[0].y = manhole[manholecount].y = top - g_Manhole.scale_y;
+				CELL[1].x = left + CELL_SIZE + g_Manhole.scale_x;
+				CELL[1].y = top - g_Manhole.scale_y;
+				CELL[2].x = left + CELL_SIZE + g_Manhole.scale_x;
+				CELL[2].y = top + CELL_SIZE;
+				CELL[3].x = left - g_Manhole.scale_x;
+				CELL[3].y = top + CELL_SIZE;
+				manholecount++;
 				break;
 			}
 			g_pD3Device->SetTexture(0, g_pTexture[TextureID]);
@@ -473,6 +519,11 @@ void CreateTexture(void) {
 		g_pD3Device,
 		"trampoline.png",
 		&g_pTexture[TRAMPOLINE_TEX]);
+
+	D3DXCreateTextureFromFile(
+		g_pD3Device,
+		"manhole.png",
+		&g_pTexture[MANHOLE_TEX]);
 }
 
 HRESULT InitDinput(HWND hWnd)
